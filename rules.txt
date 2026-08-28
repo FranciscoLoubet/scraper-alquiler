@@ -1,6 +1,10 @@
-3.Crear un Issue y un Branch para tu tarea:Cada vez que te asignen una tarea pequeña.Vayan a la pestaña Issues en GitHub y creen uno (ejemplo: #1 Create scraper for ZonaProp).En la terminal, parate en dev, traé lo último que subió tu compañero y creá tu rama para la tarea específica:Bashgit checkout dev
+3.Crear un Issue y un Branch para tu tarea:Cada vez que te asignen una tarea pequeña.Vayan a la pestaña Issues en GitHub y creen uno (ejemplo: #1 Create scraper for ZonaProp).En la terminal, parate en dev, traé lo último que subió tu compañero y creá tu rama para la tarea específica:Bash
+
+git checkout dev
 git pull origin dev
 git checkout -b feature/scraper-zonaprop
+
+
 4.Trabajar y guardar cambios:Durante el día mientras programás.Guardá tus avances localmente con mensajes claros y subilos a GitHub:Bash# Ver qué archivos modificaste
 git status
 
@@ -12,6 +16,8 @@ git commit -m "Agrega extractor de precios en ZonaProp"
 
 # Subir tu rama a GitHub
 git push -u origin feature/scraper-zonaprop
+
+
 5.Abrir un Pull Request (PR):Al terminar la feature.Entrá a la página de GitHub de tu proyecto. Verás un botón amarillo que dice Compare & pull request. Hacé clic ahí.IMPORTANTE: Cambiá la rama base. Configuralo para mergear base: dev $\leftarrow$ compare: feature/scraper-zonaprop (¡nunca directo a main!).En la descripción escribí: Closes #1 (poniendo el número del Issue). Esto cerrará la tarea automáticamente cuando se apruebe.Asigná a tu compañero como Reviewer.6.Revisar y Mergear:Tu compañero hace este paso.Tu compañero entra a la pestaña Pull Requests, revisa la pestaña Files changed y deja comentarios o correcciones si hace falta.Si está todo bien, hace clic en Approve y luego en Confirm merge.Borren la rama feature/scraper-zonaprop en GitHub usando el botón que aparece ahí mismo.
 
 
@@ -21,3 +27,21 @@ ISSUES:
 git pull origin dev
 git checkout -b feature/scraper-zonaprop
 3.3. Linkeás el Issue en el Pull Request:En GitHub al terminar la tarea.Cuando terminás la tarea y abrís el Pull Request en GitHub para pasar de feature/scraper-zonaprop $\rightarrow$ dev, en la descripción escribís:Closes #1 (o el número de Issue que te tocó)Al poner esa palabra mágica (Closes #1), en el momento en que tu compañero apruebe el PR y lo mergee a dev, GitHub cerrará automáticamente el Issue #1 y lo moverá a completado.
+
+
+¿Cuándo y cómo conviene borrarla?
+El momento correcto para borrar una rama es después de que tu compañero haya aprobado el Pull Request y los cambios ya estén guardados en dev.
+
+Para borrarla y mantener el proyecto limpio, hacés esto:
+
+Borrar en GitHub (Remoto):
+
+Al final de la página del Pull Request en GitHub, hacé clic en el botón Delete branch.
+
+Borrar en tu computadora (Local):
+
+En tu terminal, salí de la rama y borrala:
+
+Bash
+git checkout dev
+git branch -d feature/nombre-de-tu-tarea
