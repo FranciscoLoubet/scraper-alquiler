@@ -1,3 +1,2 @@
-print(hola)
-
-print("holaaa")
+print("hola")
+print("boludo")
