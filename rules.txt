@@ -13,3 +13,11 @@ git commit -m "Agrega extractor de precios en ZonaProp"
 # Subir tu rama a GitHub
 git push -u origin feature/scraper-zonaprop
 5.Abrir un Pull Request (PR):Al terminar la feature.Entrá a la página de GitHub de tu proyecto. Verás un botón amarillo que dice Compare & pull request. Hacé clic ahí.IMPORTANTE: Cambiá la rama base. Configuralo para mergear base: dev $\leftarrow$ compare: feature/scraper-zonaprop (¡nunca directo a main!).En la descripción escribí: Closes #1 (poniendo el número del Issue). Esto cerrará la tarea automáticamente cuando se apruebe.Asigná a tu compañero como Reviewer.6.Revisar y Mergear:Tu compañero hace este paso.Tu compañero entra a la pestaña Pull Requests, revisa la pestaña Files changed y deja comentarios o correcciones si hace falta.Si está todo bien, hace clic en Approve y luego en Confirm merge.Borren la rama feature/scraper-zonaprop en GitHub usando el botón que aparece ahí mismo.
+
+
+
+ISSUES:
+¿Cómo y cuándo los usás?1.1. Creás el Issue en GitHub:Antes de tocar una línea de código.Entrás a tu repositorio en GitHub y vas a la pestaña Issues $\rightarrow$ New Issue.Le ponés un título claro y una descripción corta:Título: Crear scraper para ZonaPropDescripción: "Extraer precio, ubicación y fotos de cada publicación."Te lo asignás a vos mismo (Assignees) y le podés poner una etiqueta (Label: feature, bug, etc.).Al crearlo, GitHub le asigna un número automáticamente (por ejemplo, #1 o #12).2.2. Creás la rama relacionada con ese Issue:En tu terminal.Usa el número o nombre del Issue para nombrar tu rama, así todo queda ordenado:Bashgit checkout dev
+git pull origin dev
+git checkout -b feature/scraper-zonaprop
+3.3. Linkeás el Issue en el Pull Request:En GitHub al terminar la tarea.Cuando terminás la tarea y abrís el Pull Request en GitHub para pasar de feature/scraper-zonaprop $\rightarrow$ dev, en la descripción escribís:Closes #1 (o el número de Issue que te tocó)Al poner esa palabra mágica (Closes #1), en el momento en que tu compañero apruebe el PR y lo mergee a dev, GitHub cerrará automáticamente el Issue #1 y lo moverá a completado.
