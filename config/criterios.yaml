@@ -1,0 +1,50 @@
+# criterios.yaml
+# Criterios fijos que definen si una publicación nos interesa o no.
+# core/filters.py lee este archivo y aplica cumple_criterios(pub, criterios).
+
+zonas:
+  # Whitelist de zonas aceptadas. El normalizador de cada sitio debe mapear
+  # su forma de nombrar la ubicación a uno de estos valores.
+  # TODO: completar con las zonas exactas (CABA, San Isidro, Vicente López,
+  # San Fernando, Olivos, Martínez, Boulogne, etc.)
+  incluir:
+    - "TODO_zona_1"
+    - "TODO_zona_2"
+
+precio:
+  moneda: "ARS"          # ARS o USD — TODO: confirmar en qué moneda filtrar
+  minimo: 0               # TODO
+  maximo: 999999999       # TODO
+
+ambientes:
+  minimo: null            # null = sin restricción
+  maximo: null
+
+superficie_m2:
+  minimo: null            # m² mínimos, null = sin restricción
+
+amueblado:
+  # true = solo amueblados, false = solo sin amueblar, null = indiferente
+  requerido: null
+
+ocupantes_maximo:
+  # Si la publicación indica un máximo de ocupantes permitidos, debe ser
+  # mayor o igual a este valor. Si el sitio no publica ese dato, la
+  # publicación NO se descarta por esto (falta de info no es rechazo).
+  minimo_necesario: 2     # TODO: ajustar según corresponda
+
+puntos_de_interes:
+  # Búsqueda vía OpenStreetMap (Overpass API), gratis y sin límite de cuota.
+  supermercado:
+    requerido: true
+    radio_metros: 500     # TODO: ajustar radio "cercano"
+  gimnasio:
+    requerido: false
+    radio_metros: 1000    # TODO: ajustar radio "cercano"
+
+# Notas:
+# - "requerido: true" en un POI significa que si no encontramos ninguno
+#   dentro del radio, la publicación se descarta.
+# - Estos criterios son fijos por ahora (según lo charlado). Si más adelante
+#   quieren cambiarlos seguido, se puede migrar a una hoja separada del
+#   mismo Google Sheet en vez de este archivo.
