@@ -4,6 +4,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class Scraper(ABC):
     """Contrato que debe cumplir todo scraper de un sitio."""
 
