@@ -7,9 +7,9 @@ logger = logging.getLogger(__name__)
 class Scraper(ABC):
     """Contrato que debe cumplir todo scraper de un sitio."""
 
-    nombre_sitio: str  # ej: "zonaprop"
+    nombre_sitio: str = "desconocido"  # ej: "zonaprop"
 
-    def __init__(self, session="None"):
+    def __init__(self, session=None):
         # más adelante esto va a recibir la sesión de utils/http.py
         # (rotación de user-agent, delays) en vez de crear una propia acá
         self.session = session
@@ -30,14 +30,38 @@ class Scraper(ABC):
     def _timestamp(self) -> str:
         return datetime.now().isoformat()
 
+    def _site_name(self) -> str:
+        return getattr(self, "nombre_sitio", None) or "desconocido"
+
+    def _publication_id(self, raw: dict | None) -> str:
+        if not isinstance(raw, dict):
+            return "<raw no dict>"
+
+        for key in ("url", "link", "id", "slug", "titulo", "ubicacion"):
+            value = raw.get(key)
+            if value not in (None, ""):
+                return str(value)
+
+        return str(raw)
+
     def run(self) -> list[dict]:
         """Punto de entrada único: trae el listado y parsea cada item,
         sin que un error en una publicación tire abajo todo el resto.
         """
         publicaciones = []
-        for raw in self.fetch_listings():
+        try:
+            raws = self.fetch_listings()
+        except Exception:
+            logger.exception("[%s] error fetching listings", self._site_name())
+            return []
+
+        for raw in raws or []:
             try:
                 publicaciones.append(self.parse_listing(raw))
-            except Exception as e:
-                logger.warning(f"[{self.nombre_sitio}] error parseando publicación: {e}")
+            except Exception:
+                logger.exception(
+                    "[%s] error parseando publicación: %s",
+                    self._site_name(),
+                    self._publication_id(raw),
+                )
         return publicaciones
