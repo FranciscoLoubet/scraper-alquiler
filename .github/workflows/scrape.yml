@@ -1,0 +1,56 @@
+name: Scrape alquileres
+
+on:
+  schedule:
+    # Cada 6 horas. Ajustar según cuánto se quiera "molestar" a los
+    # sitios de origen vs. qué tan rápido se quieren ver publicaciones
+    # nuevas en el Sheet.
+    - cron: "0 */6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Escribir credenciales de Google Sheets
+        env:
+          GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
+        run: echo "$GOOGLE_SHEETS_CREDENTIALS_JSON" > credentials.json
+
+      - name: Correr el scraper
+        env:
+          GOOGLE_SHEETS_SPREADSHEET_ID: ${{ secrets.GOOGLE_SHEETS_SPREADSHEET_ID }}
+          GOOGLE_SHEETS_CREDENTIALS_PATH: credentials.json
+        run: python main.py
+
+      - name: Borrar credenciales
+        if: always()
+        run: rm -f credentials.json
+
+      - name: Guardar estado de deduplicación
+        run: |
+          git config user.name "scraper-bot"
+          git config user.email "scraper-bot@users.noreply.github.com"
+          if ! git diff --quiet -- data/vistos.json; then
+            git add data/vistos.json
+            git commit -m "chore: actualizar publicaciones ya vistas [skip ci]"
+            git push
+          else
+            echo "Sin publicaciones nuevas, nada que commitear"
+          fi

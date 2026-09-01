@@ -147,6 +147,10 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# Credenciales de Google (service account) descargadas localmente
+credentials.json
+*service-account*.json
+
 # Environments
 .env
 .envrc

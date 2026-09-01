@@ -1,46 +1,62 @@
 # criterios.yaml
 # Criterios fijos que definen si una publicación nos interesa o no.
-# core/filters.py lee este archivo y aplica cumple_criterios(pub, criterios).
+# main.py lee este archivo y arma FilterConfig (core/filters.py) más
+# los chequeos de ubicación/POIs (core/geocoder.py, core/poi_finder.py).
 
-zonas:
-  # Whitelist de zonas aceptadas. El normalizador de cada sitio debe mapear
-  # su forma de nombrar la ubicación a uno de estos valores.
-  # TODO: completar con las zonas exactas (CABA, San Isidro, Vicente López,
-  # San Fernando, Olivos, Martínez, Boulogne, etc.)
-  incluir:
-    - "TODO_zona_1"
-    - "TODO_zona_2"
+ubicacion:
+  # No filtramos por barrio/zona puntual: lo que importa es qué tan
+  # cerca (en tiempo de viaje) queda de la universidad.
+  punto_referencia:
+    nombre: "Universidad de San Andrés"
+    direccion: "Universidad de San Andrés, Victoria, Provincia de Buenos Aires, Argentina"
+
+  # Proxy de "no más de 30/40 min de viaje". No hay conectado un
+  # servicio de tiempo de viaje real (tipo Google Distance Matrix,
+  # que requiere API key paga) -- se usa distancia en línea recta
+  # como aproximación. Si en la práctica no refleja bien los tiempos
+  # reales (autopistas, cortes de tránsito, etc.), ajustar este número.
+  distancia_maxima_km: 8
+
+  transporte_publico_si_lejos:
+    # Si la publicación queda más lejos que distancia_maxima_km, la
+    # aceptamos igual si tiene una parada de colectivo o una estación
+    # de tren cerca (se asume que buen acceso a transporte compensa
+    # la distancia en línea recta).
+    requerido: true
+    radio_metros: 500
 
 precio:
-  moneda: "ARS"          # ARS o USD — TODO: confirmar en qué moneda filtrar
-  minimo: 0               # TODO
-  maximo: 999999999       # TODO
-
-ambientes:
-  minimo: null            # null = sin restricción
+  # No filtramos por precio: solo nos interesa que se muestre en el Sheet.
+  moneda: null
+  minimo: null
   maximo: null
 
-superficie_m2:
-  minimo: null            # m² mínimos, null = sin restricción
+ambientes:
+  minimo: null            # sin restricción
+  maximo: null
 
 amueblado:
-  # true = solo amueblados, false = solo sin amueblar, null = indiferente
+  # No es excluyente: se prefieren amueblados, pero también se
+  # muestran los que no lo están (la columna "amueblado" del Sheet
+  # indica cuál es cuál).
   requerido: null
 
 ocupantes_maximo:
-  # Si la publicación indica un máximo de ocupantes permitidos, debe ser
-  # mayor o igual a este valor. Si el sitio no publica ese dato, la
-  # publicación NO se descarta por esto (falta de info no es rechazo).
-  minimo_necesario: 2     # TODO: ajustar según corresponda
+  # NOTA: por ahora ningún scraper extrae este dato de forma
+  # estructurada (ZonaProp no lo expone en el JSON de listado) --
+  # queda cargado para cuando se sume esa extracción. Mientras tanto
+  # no descarta ninguna publicación por esto.
+  minimo_necesario: 2
 
 puntos_de_interes:
   # Búsqueda vía OpenStreetMap (Overpass API), gratis y sin límite de cuota.
+  # "No más de 5 cuadras" ~ 500m.
   supermercado:
     requerido: true
-    radio_metros: 500     # TODO: ajustar radio "cercano"
+    radio_metros: 500
   gimnasio:
-    requerido: false
-    radio_metros: 1000    # TODO: ajustar radio "cercano"
+    requerido: true
+    radio_metros: 500
 
 # Notas:
 # - "requerido: true" en un POI significa que si no encontramos ninguno
