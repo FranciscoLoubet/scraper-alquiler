@@ -50,12 +50,22 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * RADIO_TIERRA_KM * math.asin(math.sqrt(a))
 
 
+MAX_FALLOS_CONSECUTIVOS = 3
+
+
 class POIFinder:
     def __init__(self, session: Optional[requests.Session] = None):
         self.session = session or requests.Session()
-        self.session.headers.setdefault("User-Agent", USER_AGENT)
+        # requests.Session() ya trae un User-Agent propio
+        # ("python-requests/x.y.z") seteado en session.headers por
+        # default, así que .setdefault() nunca lo pisa. Overpass
+        # rechaza ese User-Agent genérico con 406 -- hace falta
+        # asignarlo directo para que efectivamente viaje el nuestro.
+        self.session.headers["User-Agent"] = USER_AGENT
         self._cache: dict[tuple, bool] = {}
         self._ultima_request = 0.0
+        self._fallos_consecutivos = 0
+        self._circuito_abierto = False
 
     def _throttle(self) -> None:
         transcurrido = time.monotonic() - self._ultima_request
@@ -81,6 +91,15 @@ class POIFinder:
         if clave_cache in self._cache:
             return self._cache[clave_cache]
 
+        if self._circuito_abierto:
+            # Ya vimos suficientes fallos seguidos como para asumir que
+            # Overpass está caído/inalcanzable en esta corrida. Frenamos
+            # de golpe en vez de seguir esperando el timeout (30s) en
+            # cada publicación -- si insistiéramos, con decenas de
+            # publicaciones el script puede tardar más de una hora en
+            # terminar solo reintentando un servicio que no va a responder.
+            return True
+
         query = self._build_query(tipo, lat, lon, radio_metros)
 
         self._throttle()
@@ -97,9 +116,18 @@ class POIFinder:
             # público), preferimos no descartar la publicación por un
             # problema de red transitorio -- se cuela en el Sheet como
             # "no verificado" antes que perderla por una falla ajena.
+            self._fallos_consecutivos += 1
+            if self._fallos_consecutivos >= MAX_FALLOS_CONSECUTIVOS:
+                self._circuito_abierto = True
+                logger.warning(
+                    "poi_finder: %d fallos seguidos contra Overpass, dejo de consultarlo "
+                    "por el resto de la corrida",
+                    self._fallos_consecutivos,
+                )
             self._cache[clave_cache] = True
             return True
 
+        self._fallos_consecutivos = 0
         elements = data.get("elements", [])
         total = 0
         if elements:

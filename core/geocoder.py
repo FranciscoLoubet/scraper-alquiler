@@ -35,7 +35,12 @@ Coordenadas = tuple[float, float]
 class Geocoder:
     def __init__(self, session: Optional[requests.Session] = None, country_bias: str = "ar"):
         self.session = session or requests.Session()
-        self.session.headers.setdefault("User-Agent", USER_AGENT)
+        # requests.Session() ya trae un User-Agent propio
+        # ("python-requests/x.y.z") seteado en session.headers por
+        # default, así que .setdefault() nunca lo pisa. Nominatim
+        # exige un User-Agent identificable -- hace falta asignarlo
+        # directo para que efectivamente viaje el nuestro.
+        self.session.headers["User-Agent"] = USER_AGENT
         self.country_bias = country_bias
         self._cache: dict[str, Optional[Coordenadas]] = {}
         self._ultima_request = 0.0

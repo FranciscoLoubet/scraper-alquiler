@@ -27,7 +27,7 @@ from core.normalizer import normalize_many
 from core.poi_finder import POIFinder, haversine_km
 from notifiers.sheets_writer import SheetsWriter
 from sites.zonaprop import ZonapropScraper
-from utils.http import build_session
+from utils.browser import build_browser_session
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,7 +43,7 @@ DEDUP_STORAGE_PATH = BASE_DIR / "data" / "vistos.json"
 # son parámetros de scraping, no criterios de negocio sobre el
 # Listing ya normalizado.
 SEARCH_URLS = {
-    "zonaprop": "https://www.zonaprop.com.ar/alquiler/departamentos-vicente-lopez-san-isidro.html",
+    "zonaprop": "https://www.zonaprop.com.ar/departamentos-alquiler-vicente-lopez-san-isidro.html",
 }
 
 
@@ -168,14 +168,13 @@ def main() -> None:
     criterios = cargar_criterios()
     filter_config = construir_filter_config(criterios)
 
-    session = build_session()
-    scrapers = [
-        ZonapropScraper(session=session, initial_url=SEARCH_URLS["zonaprop"]),
-    ]
-
     crudos = []
-    for scraper in scrapers:
-        crudos.extend(scraper.run())
+    with build_browser_session() as session:
+        scrapers = [
+            ZonapropScraper(session=session, initial_url=SEARCH_URLS["zonaprop"]),
+        ]
+        for scraper in scrapers:
+            crudos.extend(scraper.run())
     logger.info("Scrapeadas %d publicaciones crudas", len(crudos))
 
     listings = normalize_many(crudos)

@@ -81,24 +81,24 @@ class ZonapropScraper(Scraper):
         return f"{base_path}-pagina-{page_number}.html"
 
     def _extract_state_data(self, response_text: str, current_url: str) -> dict:
-        """Extrae el JSON embebido de `__PRELOADED_STATE__` de la página HTML."""
+        """Extrae el JSON embebido de `__PRELOADED_STATE__` de la página HTML.
+
+        Zonaprop mete, dentro del mismo `<script>`, la asignación de
+        `__PRELOADED_STATE__` seguida de otras (`__SITE_DATA__`,
+        `__PRELOADED_TRANSLATIONS__`, etc.) antes del `</script>` de
+        cierre. Cortar en el primer `</script>` arrastra esas
+        asignaciones siguientes y rompe el JSON. `raw_decode` parsea
+        un único objeto JSON válido desde el inicio del payload e
+        ignora lo que venga después, sin importar qué sea.
+        """
         marker = "window.__PRELOADED_STATE__ = "
         start = response_text.find(marker)
         if start == -1:
             raise ValueError(f"No se encontró __PRELOADED_STATE__ en {current_url}")
 
-        payload = response_text[start + len(marker):].strip()
-        payload = payload.split("</script>", 1)[0].strip()
-        if payload.endswith(";"):
-            payload = payload[:-1].rstrip()
-
-        try:
-            return json.loads(payload)
-        except json.JSONDecodeError:
-            match = re.search(r'(\{.*\})\s*;?\s*$', payload, re.DOTALL)
-            if not match:
-                raise
-            return json.loads(match.group(1))
+        payload = response_text[start + len(marker):].lstrip()
+        data, _ = json.JSONDecoder().raw_decode(payload)
+        return data
 
     def fetch_listings(self) -> list[dict]:
         """Trae la lista de publicaciones crudas de la búsqueda actual.

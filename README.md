@@ -26,7 +26,13 @@ Todo se orquesta desde `main.py`.
    python3 -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
+   playwright install --with-deps chromium
    ```
+   El último paso descarga el Chromium que usa `utils/browser.py` para
+   scrapear ZonaProp -- el sitio está detrás de Cloudflare y exige
+   resolver un challenge en JavaScript, que un cliente HTTP simple
+   como `requests` no puede resolver por más headers de navegador que
+   se le agreguen.
 2. Crear una Service Account en Google Cloud, descargar su JSON de
    credenciales, y compartir la Google Sheet destino con el email de
    esa service account (como Editor).

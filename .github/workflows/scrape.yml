@@ -28,6 +28,9 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
+      - name: Instalar Chromium para Playwright
+        run: playwright install --with-deps chromium
+
       - name: Escribir credenciales de Google Sheets
         env:
           GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
