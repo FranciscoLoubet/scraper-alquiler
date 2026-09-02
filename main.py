@@ -70,6 +70,32 @@ def construir_filter_config(criterios: dict) -> FilterConfig:
     )
 
 
+def resolver_punto_referencia(
+    criterios: dict, geocoder: Geocoder
+) -> Optional[tuple[float, float]]:
+    """
+    Devuelve las coordenadas del punto de referencia (ej. la
+    universidad). Si están hardcodeadas en criterios.yaml (lat/lon),
+    las usa directo sin llamar a Nominatim -- es un punto fijo, no
+    tiene sentido geocodificarlo en cada corrida, y así el pipeline no
+    depende de que Nominatim esté disponible para esto. Si no están
+    cargadas, geocodifica la dirección como fallback.
+    """
+    punto_ref_cfg = (criterios.get("ubicacion") or {}).get("punto_referencia") or {}
+    lat, lon = punto_ref_cfg.get("lat"), punto_ref_cfg.get("lon")
+    if lat is not None and lon is not None:
+        return (float(lat), float(lon))
+
+    direccion = punto_ref_cfg.get("direccion")
+    if not direccion:
+        return None
+
+    referencia = geocoder.geocode(direccion)
+    if referencia is None:
+        logger.warning("No se pudo geocodificar el punto de referencia '%s'", direccion)
+    return referencia
+
+
 def cumple_puntos_de_interes(
     listing: Listing, criterios: dict, geocoder: Geocoder, poi_finder: POIFinder
 ) -> bool:
@@ -160,14 +186,7 @@ def main() -> None:
     geocoder = Geocoder()
     poi_finder = POIFinder()
 
-    direccion_referencia = ((criterios.get("ubicacion") or {}).get("punto_referencia") or {}).get(
-        "direccion"
-    )
-    referencia = geocoder.geocode(direccion_referencia) if direccion_referencia else None
-    if direccion_referencia and referencia is None:
-        logger.warning(
-            "No se pudo geocodificar el punto de referencia '%s'", direccion_referencia
-        )
+    referencia = resolver_punto_referencia(criterios, geocoder)
 
     con_ubicacion = [
         l for l in filtradas if cumple_ubicacion(l, criterios, referencia, geocoder, poi_finder)

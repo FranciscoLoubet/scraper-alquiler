@@ -9,6 +9,15 @@ ubicacion:
   punto_referencia:
     nombre: "Universidad de San Andrés"
     direccion: "Universidad de San Andrés, Victoria, Provincia de Buenos Aires, Argentina"
+    # Coordenadas del campus (Vito Dumas 284, Victoria) hardcodeadas
+    # para no depender de geocodificar esto en cada corrida -- Nominatim
+    # (la API gratuita que usamos para geocoding) viene devolviendo 403
+    # seguido, y este es un punto fijo que no cambia. Si lat/lon están
+    # cargados acá, main.py los usa directo y no llama al geocoder para
+    # esto. Verificar/ajustar si hace falta más precisión (click derecho
+    # en Google Maps -> "¿Qué hay aquí?" sobre el campus).
+    lat: -34.44644
+    lon: -58.529835
 
   # Proxy de "no más de 30/40 min de viaje". No hay conectado un
   # servicio de tiempo de viaje real (tipo Google Distance Matrix,
