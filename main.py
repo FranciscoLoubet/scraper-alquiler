@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 CRITERIOS_PATH = BASE_DIR / "config" / "criterios.yaml"
 DEDUP_STORAGE_PATH = BASE_DIR / "data" / "vistos.json"
+GEOCODE_CACHE_PATH = BASE_DIR / "data" / "geocode_cache.json"
+POI_CACHE_PATH = BASE_DIR / "data" / "poi_cache.json"
 
 # URLs de búsqueda por sitio. Quedan acá (no en criterios.yaml) porque
 # son parámetros de scraping, no criterios de negocio sobre el
@@ -182,8 +184,8 @@ def main() -> None:
 
     filtradas = apply_filters(listings, filter_config)
 
-    geocoder = Geocoder()
-    poi_finder = POIFinder()
+    geocoder = Geocoder(cache_path=GEOCODE_CACHE_PATH)
+    poi_finder = POIFinder(cache_path=POI_CACHE_PATH)
 
     referencia = resolver_punto_referencia(criterios, geocoder)
 
