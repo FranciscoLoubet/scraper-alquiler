@@ -1,23 +1,34 @@
 # scraper-alquiler
 
 Bot que scrapea publicaciones de alquiler (por ahora, ZonaProp), las
-filtra según criterios propios (ubicación/tiempo a la universidad,
-transporte público, supermercado y gimnasio cerca, precio, ambientes,
-amueblado) y escribe las nuevas coincidencias a una Google Sheet.
+filtra según criterios propios (amueblado, capacidad para 2 o 4
+personas con tope de precio por persona, supermercado y gimnasio
+cerca) y escribe las nuevas coincidencias a una Google Sheet --
+ordenadas según qué tan conveniente es llegar a la universidad desde
+cada una (caminando, combi, tren, colectivo, o nada).
 
 ## Cómo funciona (pipeline)
 
 ```
-sites/*.py          -> scrapea el sitio, devuelve dicts crudos
-core/normalizer.py  -> convierte los dicts crudos a Listing (core/models.py)
-core/filters.py     -> aplica precio/ambientes/amueblado (config/criterios.yaml)
-core/geocoder.py    -> geocodifica ubicaciones sin lat/lon (Nominatim/OSM)
-core/poi_finder.py  -> chequea distancia a la universidad + POIs obligatorios (Overpass/OSM)
-core/dedup.py       -> descarta publicaciones ya notificadas en corridas anteriores
-notifiers/sheets_writer.py -> escribe las publicaciones nuevas a Google Sheets
+sites/*.py                 -> scrapea el sitio, devuelve dicts crudos
+core/normalizer.py         -> convierte los dicts crudos a Listing (core/models.py)
+core/filters.py            -> aplica amueblado (config/criterios.yaml)
+core/currency.py           -> cotización ARS/USD, para comparar precios en la misma moneda
+                               (main.cumple_capacidad_y_precio: 2/4 personas según ambientes,
+                               con tope de precio por persona)
+core/geocoder.py           -> geocodifica ubicaciones sin lat/lon (Nominatim/OSM)
+core/poi_finder.py         -> supermercado/gimnasio obligatorios + colectivo cercano (Overpass/OSM)
+core/puntos_referencia.py  -> resuelve combis/estaciones de tren fijas (geocoding cacheado a disco)
+                               (main.clasificar_ubicacion: ordena por caminando > combi >
+                               tren de la costa > tren mitre > colectivo > nada)
+core/dedup.py               -> descarta publicaciones ya notificadas en corridas anteriores
+notifiers/sheets_writer.py -> escribe las publicaciones nuevas (ordenadas) a Google Sheets
 ```
 
-Todo se orquesta desde `main.py`.
+Todo se orquesta desde `main.py`. El orden de ubicación/transporte
+(columnas `prioridad_ubicacion` / `medio_transporte` en el Sheet) no
+descarta ninguna publicación, solo la ordena -- ver el comentario de
+la sección `transporte` en `config/criterios.yaml`.
 
 ## Setup
 

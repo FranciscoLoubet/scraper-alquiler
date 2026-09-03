@@ -53,6 +53,16 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * RADIO_TIERRA_KM * math.asin(math.sqrt(a))
 
 
+def distancia_minima_km(lat: float, lon: float, puntos: list[tuple[float, float]]) -> Optional[float]:
+    """Distancia al más cercano de una lista de puntos fijos (ver core/puntos_referencia.py).
+
+    None si `puntos` está vacía (ningún punto de ese tipo se pudo resolver).
+    """
+    if not puntos:
+        return None
+    return min(haversine_km(lat, lon, p_lat, p_lon) for p_lat, p_lon in puntos)
+
+
 MAX_FALLOS_CONSECUTIVOS = 3
 
 

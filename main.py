@@ -3,10 +3,13 @@ main.py
 
 Orquestador principal: corre todos los scrapers configurados, normaliza
 las publicaciones a Listing, aplica los criterios de negocio
-(config/criterios.yaml) -- precio/ambientes/amueblado, distancia a la
-universidad + transporte público, y puntos de interés obligatorios --,
-descarta duplicados ya vistos en corridas anteriores, y escribe las
-publicaciones nuevas que pasan todos los filtros a Google Sheets.
+(config/criterios.yaml) -- amueblado, capacidad (2 o 4 personas) +
+precio máximo por persona, y puntos de interés obligatorios --,
+clasifica las que sobreviven según qué tan cerca están de la
+universidad (caminando, combi, tren, colectivo o nada), descarta
+duplicados ya vistos en corridas anteriores, y escribe las
+publicaciones nuevas -- ordenadas por esa clasificación -- a Google
+Sheets.
 """
 
 from __future__ import annotations
@@ -19,12 +22,14 @@ from typing import Optional
 import yaml
 from dotenv import load_dotenv
 
+from core.currency import CotizacionDolar
 from core.dedup import Deduplicator
 from core.filters import FilterConfig, apply_filters
 from core.geocoder import Geocoder
 from core.models import Listing
 from core.normalizer import normalize_many
-from core.poi_finder import POIFinder, haversine_km
+from core.poi_finder import POIFinder, distancia_minima_km, haversine_km
+from core.puntos_referencia import resolver_puntos
 from notifiers.sheets_writer import SheetsWriter
 from sites.zonaprop import ZonapropScraper
 from utils.browser import build_browser_session
@@ -46,6 +51,24 @@ POI_CACHE_PATH = BASE_DIR / "data" / "poi_cache.json"
 # Listing ya normalizado.
 SEARCH_URLS = {
     "zonaprop": "https://www.zonaprop.com.ar/departamentos-alquiler-vicente-lopez-san-isidro.html",
+}
+
+# Niveles de prioridad de ubicación/transporte, del mejor (0) al peor.
+# Ver el comentario de la sección `transporte` en config/criterios.yaml.
+NIVEL_CAMINANDO = 0
+NIVEL_COMBI = 1
+NIVEL_TREN_COSTA = 2
+NIVEL_TREN_MITRE = 3
+NIVEL_COLECTIVO = 4
+NIVEL_SIN_TRANSPORTE = 5
+
+ETIQUETAS_NIVEL = {
+    NIVEL_CAMINANDO: "Caminando a la universidad",
+    NIVEL_COMBI: "Combi universitaria",
+    NIVEL_TREN_COSTA: "Tren de la Costa",
+    NIVEL_TREN_MITRE: "Tren Mitre",
+    NIVEL_COLECTIVO: "Colectivo",
+    NIVEL_SIN_TRANSPORTE: "Sin transporte cercano",
 }
 
 
@@ -98,6 +121,44 @@ def resolver_punto_referencia(
     return referencia
 
 
+def cumple_capacidad_y_precio(
+    listing: Listing, criterios: dict, cotizador: CotizacionDolar
+) -> bool:
+    """
+    Se queda solo con departamentos para 2 o 4 personas (según el
+    mapeo ambientes -> personas de criterios.yaml) y con precio, ya
+    convertido a ARS si hace falta, dentro del tope por persona.
+    """
+    capacidad_cfg = criterios.get("capacidad") or {}
+    mapeo = capacidad_cfg.get("ambientes_a_personas") or {}
+    if not mapeo:
+        return True  # sin mapeo configurado, no filtramos por esto
+
+    personas = mapeo.get(int(listing.ambientes)) if listing.ambientes else None
+    if personas is None:
+        return False  # ambientes fuera de las capacidades que interesan (2 o 4 personas)
+
+    precio_persona_cfg = criterios.get("precio_por_persona") or {}
+    tope_por_persona = precio_persona_cfg.get("maximo")
+    if tope_por_persona is None:
+        return True
+
+    if listing.precio is None:
+        return False  # no hay precio, no se puede evaluar contra el tope
+
+    precio_ars = cotizador.a_ars(listing.precio, listing.moneda)
+    if precio_ars is None:
+        logger.warning(
+            "No se pudo convertir a ARS el precio de '%s' (%s %s), la descarto por las dudas",
+            listing.url,
+            listing.precio,
+            listing.moneda,
+        )
+        return False
+
+    return precio_ars <= tope_por_persona * personas
+
+
 def cumple_puntos_de_interes(
     listing: Listing, criterios: dict, geocoder: Geocoder, poi_finder: POIFinder
 ) -> bool:
@@ -128,41 +189,60 @@ def cumple_puntos_de_interes(
     return True
 
 
-def cumple_ubicacion(
+def clasificar_ubicacion(
     listing: Listing,
     criterios: dict,
-    referencia: Optional[tuple[float, float]],
+    referencia_uni: Optional[tuple[float, float]],
+    puntos_combi: list[tuple[float, float]],
+    puntos_tren_costa: list[tuple[float, float]],
+    puntos_tren_mitre: list[tuple[float, float]],
     geocoder: Geocoder,
     poi_finder: POIFinder,
-) -> bool:
-    ubicacion_cfg = criterios.get("ubicacion") or {}
-    if referencia is None:
-        return True  # sin punto de referencia geocodificado, no filtramos por esto
+) -> tuple[int, str]:
+    """
+    Devuelve (nivel, etiqueta) según qué tan conveniente es llegar a
+    la universidad desde esta publicación. No descarta nada -- ver el
+    comentario de la sección `transporte` en config/criterios.yaml.
+    """
+    transporte_cfg = criterios.get("transporte") or {}
 
     lat, lon = listing.lat, listing.lon
     if lat is None or lon is None:
         geocodificado = geocoder.geocode(listing.ubicacion)
         if geocodificado is None:
             logger.info(
-                "No se pudo geocodificar '%s', no puedo evaluar distancia a la universidad",
+                "No se pudo geocodificar '%s', no puedo clasificar su ubicación",
                 listing.ubicacion,
             )
-            return True
+            return (NIVEL_SIN_TRANSPORTE, ETIQUETAS_NIVEL[NIVEL_SIN_TRANSPORTE])
         lat, lon = geocodificado
 
-    distancia_km = haversine_km(lat, lon, referencia[0], referencia[1])
-    distancia_maxima = ubicacion_cfg.get("distancia_maxima_km")
-    if distancia_maxima is None or distancia_km <= distancia_maxima:
-        return True
+    if referencia_uni is not None:
+        radio_caminata = transporte_cfg.get("radio_caminata_uni_km", 1.5)
+        if haversine_km(lat, lon, referencia_uni[0], referencia_uni[1]) <= radio_caminata:
+            return (NIVEL_CAMINANDO, ETIQUETAS_NIVEL[NIVEL_CAMINANDO])
 
-    transporte_cfg = ubicacion_cfg.get("transporte_publico_si_lejos") or {}
-    if not transporte_cfg.get("requerido"):
-        return False
+    combi_cfg = transporte_cfg.get("combis") or {}
+    d_combi = distancia_minima_km(lat, lon, puntos_combi)
+    if d_combi is not None and d_combi * 1000 <= combi_cfg.get("radio_metros", 600):
+        return (NIVEL_COMBI, ETIQUETAS_NIVEL[NIVEL_COMBI])
 
-    radio = transporte_cfg.get("radio_metros", 500)
-    tiene_colectivo = poi_finder.existe_cerca("colectivo", lat, lon, radio)
-    tiene_tren = poi_finder.existe_cerca("tren", lat, lon, radio)
-    return tiene_colectivo or tiene_tren
+    tren_costa_cfg = transporte_cfg.get("tren_costa") or {}
+    d_tren_costa = distancia_minima_km(lat, lon, puntos_tren_costa)
+    if d_tren_costa is not None and d_tren_costa * 1000 <= tren_costa_cfg.get("radio_metros", 700):
+        return (NIVEL_TREN_COSTA, ETIQUETAS_NIVEL[NIVEL_TREN_COSTA])
+
+    tren_mitre_cfg = transporte_cfg.get("tren_mitre") or {}
+    d_tren_mitre = distancia_minima_km(lat, lon, puntos_tren_mitre)
+    if d_tren_mitre is not None and d_tren_mitre * 1000 <= tren_mitre_cfg.get("radio_metros", 700):
+        return (NIVEL_TREN_MITRE, ETIQUETAS_NIVEL[NIVEL_TREN_MITRE])
+
+    colectivo_cfg = transporte_cfg.get("colectivo") or {}
+    radio_colectivo = colectivo_cfg.get("radio_metros", 400)
+    if poi_finder.existe_cerca("colectivo", lat, lon, radio_colectivo):
+        return (NIVEL_COLECTIVO, ETIQUETAS_NIVEL[NIVEL_COLECTIVO])
+
+    return (NIVEL_SIN_TRANSPORTE, ETIQUETAS_NIVEL[NIVEL_SIN_TRANSPORTE])
 
 
 def main() -> None:
@@ -184,20 +264,58 @@ def main() -> None:
 
     filtradas = apply_filters(listings, filter_config)
 
+    cotizador = CotizacionDolar()
+    con_capacidad_precio = [
+        l for l in filtradas if cumple_capacidad_y_precio(l, criterios, cotizador)
+    ]
+    logger.info(
+        "%d publicaciones cumplen capacidad (2 o 4 personas) y precio por persona",
+        len(con_capacidad_precio),
+    )
+
     geocoder = Geocoder(cache_path=GEOCODE_CACHE_PATH)
     poi_finder = POIFinder(cache_path=POI_CACHE_PATH)
 
-    referencia = resolver_punto_referencia(criterios, geocoder)
-
-    con_ubicacion = [
-        l for l in filtradas if cumple_ubicacion(l, criterios, referencia, geocoder, poi_finder)
-    ]
-    logger.info("%d publicaciones cumplen el criterio de ubicación/transporte", len(con_ubicacion))
-
     con_poi = [
-        l for l in con_ubicacion if cumple_puntos_de_interes(l, criterios, geocoder, poi_finder)
+        l for l in con_capacidad_precio if cumple_puntos_de_interes(l, criterios, geocoder, poi_finder)
     ]
     logger.info("%d publicaciones cumplen los puntos de interés requeridos", len(con_poi))
+
+    referencia_uni = resolver_punto_referencia(criterios, geocoder)
+
+    # resolver_puntos() usa el mismo geocoder de arriba, así que las
+    # direcciones de combis/estaciones quedan cacheadas en el mismo
+    # GEOCODE_CACHE_PATH que las ubicaciones de las publicaciones --
+    # no hace falta un cache aparte para estos puntos fijos.
+    transporte_cfg = criterios.get("transporte") or {}
+    puntos_combi = resolver_puntos((transporte_cfg.get("combis") or {}).get("puntos") or [], geocoder)
+    puntos_tren_costa = resolver_puntos(
+        (transporte_cfg.get("tren_costa") or {}).get("puntos") or [], geocoder
+    )
+    puntos_tren_mitre = resolver_puntos(
+        (transporte_cfg.get("tren_mitre") or {}).get("puntos") or [], geocoder
+    )
+
+    for listing in con_poi:
+        nivel, etiqueta = clasificar_ubicacion(
+            listing,
+            criterios,
+            referencia_uni,
+            puntos_combi,
+            puntos_tren_costa,
+            puntos_tren_mitre,
+            geocoder,
+            poi_finder,
+        )
+        listing.prioridad_ubicacion = nivel
+        listing.medio_transporte = etiqueta
+
+    # Orden: mejor ubicación primero (caminando > combi > tren costa >
+    # tren mitre > colectivo > nada) y, dentro de un mismo nivel, el
+    # precio más bajo primero. Esto solo ordena las publicaciones
+    # nuevas de esta corrida -- el Sheet es append-only, así que no
+    # reordena filas ya escritas en corridas anteriores.
+    con_poi.sort(key=lambda l: (l.prioridad_ubicacion, l.precio if l.precio is not None else float("inf")))
 
     dedup = Deduplicator(storage_path=DEDUP_STORAGE_PATH)
     nuevas = dedup.filter_new(con_poi)

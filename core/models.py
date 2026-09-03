@@ -36,6 +36,12 @@ class Listing:
     lon: Optional[float] = None
     fecha_scrapeo: str = field(default="")
 
+    # Calculados en main.py después de filtrar (no vienen del scraper):
+    # qué tan conveniente es el transporte hacia la universidad. None
+    # hasta que main.py los completa vía clasificar_ubicacion().
+    prioridad_ubicacion: Optional[int] = None  # 0 = mejor (caminando), más alto = peor
+    medio_transporte: Optional[str] = None  # ej. "Combi universitaria", "Tren de la Costa"
+
     # Orden de columnas para exportar (Sheets, CSV, etc.). Cambiarlo acá
     # cambia el orden en todos lados que usen to_row().
     HEADERS = [
@@ -50,6 +56,8 @@ class Listing:
         "lat",
         "lon",
         "fecha_scrapeo",
+        "prioridad_ubicacion",
+        "medio_transporte",
     ]
 
     def __post_init__(self):
