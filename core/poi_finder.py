@@ -19,9 +19,12 @@ from __future__ import annotations
 import logging
 import math
 import time
+from pathlib import Path
 from typing import Optional
 
 import requests
+
+from core.disk_cache import DiskCache
 
 logger = logging.getLogger(__name__)
 
@@ -50,12 +53,46 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * RADIO_TIERRA_KM * math.asin(math.sqrt(a))
 
 
+def distancia_minima_km(lat: float, lon: float, puntos: list[tuple[float, float]]) -> Optional[float]:
+    """Distancia al más cercano de una lista de puntos fijos (ver core/puntos_referencia.py).
+
+    None si `puntos` está vacía (ningún punto de ese tipo se pudo resolver).
+    """
+    if not puntos:
+        return None
+    return min(haversine_km(lat, lon, p_lat, p_lon) for p_lat, p_lon in puntos)
+
+
+MAX_FALLOS_CONSECUTIVOS = 3
+
+
 class POIFinder:
-    def __init__(self, session: Optional[requests.Session] = None):
+    def __init__(
+        self,
+        session: Optional[requests.Session] = None,
+        cache_path: str | Path | None = None,
+    ):
         self.session = session or requests.Session()
-        self.session.headers.setdefault("User-Agent", USER_AGENT)
-        self._cache: dict[tuple, bool] = {}
+        # requests.Session() ya trae un User-Agent propio
+        # ("python-requests/x.y.z") seteado en session.headers por
+        # default, así que .setdefault() nunca lo pisa. Overpass
+        # rechaza ese User-Agent genérico con 406 -- hace falta
+        # asignarlo directo para que efectivamente viaje el nuestro.
+        self.session.headers["User-Agent"] = USER_AGENT
+        # cache_path=None (default) deja el cache solo en memoria, para
+        # no ensuciar de I/O los tests o corridas puntuales. main.py le
+        # pasa un archivo real para no re-consultar Overpass entre
+        # corridas para la misma coordenada.
+        self._cache = DiskCache(cache_path)
+        # A diferencia del cache persistente, esto vive solo en
+        # memoria: un fallo transitorio (timeout, rate limit) no debe
+        # "recordarse para siempre" como si ahí no hubiera POIs, pero
+        # sí evitamos reintentar la misma consulta fallida dentro de
+        # esta misma corrida.
+        self._fallos_este_proceso: set[str] = set()
         self._ultima_request = 0.0
+        self._fallos_consecutivos = 0
+        self._circuito_abierto = False
 
     def _throttle(self) -> None:
         transcurrido = time.monotonic() - self._ultima_request
@@ -77,9 +114,20 @@ class POIFinder:
 
     def existe_cerca(self, tipo: str, lat: float, lon: float, radio_metros: int) -> bool:
         """True si hay al menos un POI del tipo dado dentro del radio."""
-        clave_cache = (tipo, round(lat, 5), round(lon, 5), radio_metros)
+        clave_cache = f"{tipo}:{round(lat, 5)}:{round(lon, 5)}:{radio_metros}"
         if clave_cache in self._cache:
-            return self._cache[clave_cache]
+            return self._cache.get(clave_cache)
+        if clave_cache in self._fallos_este_proceso:
+            return True
+
+        if self._circuito_abierto:
+            # Ya vimos suficientes fallos seguidos como para asumir que
+            # Overpass está caído/inalcanzable en esta corrida. Frenamos
+            # de golpe en vez de seguir esperando el timeout (30s) en
+            # cada publicación -- si insistiéramos, con decenas de
+            # publicaciones el script puede tardar más de una hora en
+            # terminar solo reintentando un servicio que no va a responder.
+            return True
 
         query = self._build_query(tipo, lat, lon, radio_metros)
 
@@ -97,9 +145,20 @@ class POIFinder:
             # público), preferimos no descartar la publicación por un
             # problema de red transitorio -- se cuela en el Sheet como
             # "no verificado" antes que perderla por una falla ajena.
-            self._cache[clave_cache] = True
+            # No lo persistimos en el cache en disco: un fallo transitorio
+            # no debe convertirse en un "sí hay POI" permanente.
+            self._fallos_este_proceso.add(clave_cache)
+            self._fallos_consecutivos += 1
+            if self._fallos_consecutivos >= MAX_FALLOS_CONSECUTIVOS:
+                self._circuito_abierto = True
+                logger.warning(
+                    "poi_finder: %d fallos seguidos contra Overpass, dejo de consultarlo "
+                    "por el resto de la corrida",
+                    self._fallos_consecutivos,
+                )
             return True
 
+        self._fallos_consecutivos = 0
         elements = data.get("elements", [])
         total = 0
         if elements:
@@ -110,5 +169,6 @@ class POIFinder:
                 total = len(elements)
 
         existe = total > 0
-        self._cache[clave_cache] = existe
+        self._cache.set(clave_cache, existe)
+        self._cache.persist()
         return existe

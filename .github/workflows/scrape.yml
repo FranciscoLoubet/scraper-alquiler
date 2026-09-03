@@ -28,6 +28,9 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
+      - name: Instalar Chromium para Playwright
+        run: playwright install --with-deps chromium
+
       - name: Escribir credenciales de Google Sheets
         env:
           GOOGLE_SHEETS_CREDENTIALS_JSON: ${{ secrets.GOOGLE_SHEETS_CREDENTIALS_JSON }}
@@ -43,14 +46,17 @@ jobs:
         if: always()
         run: rm -f credentials.json
 
-      - name: Guardar estado de deduplicación
+      - name: Guardar estado de deduplicación y caches de geocoding/POI
         run: |
           git config user.name "scraper-bot"
           git config user.email "scraper-bot@users.noreply.github.com"
-          if ! git diff --quiet -- data/vistos.json; then
-            git add data/vistos.json
-            git commit -m "chore: actualizar publicaciones ya vistas [skip ci]"
+          # git add -A sobre data/ no falla si alguno de los archivos
+          # (ej. los caches, la primera vez que se generan) todavía no
+          # existe -- simplemente agrega los que sí estén.
+          git add -A -- data/
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: actualizar publicaciones ya vistas y caches de geocoding/POI [skip ci]"
             git push
           else
-            echo "Sin publicaciones nuevas, nada que commitear"
+            echo "Sin cambios en data/, nada que commitear"
           fi

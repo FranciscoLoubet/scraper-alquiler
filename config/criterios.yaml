@@ -1,38 +1,160 @@
 # criterios.yaml
-# Criterios fijos que definen si una publicación nos interesa o no.
-# main.py lee este archivo y arma FilterConfig (core/filters.py) más
-# los chequeos de ubicación/POIs (core/geocoder.py, core/poi_finder.py).
+# Criterios que definen qué publicaciones nos interesan y en qué orden
+# se muestran. main.py lee este archivo y arma FilterConfig
+# (core/filters.py) más los chequeos de capacidad/precio, ubicación y
+# POIs (core/currency.py, core/geocoder.py, core/poi_finder.py,
+# core/puntos_referencia.py).
 
 ubicacion:
-  # No filtramos por barrio/zona puntual: lo que importa es qué tan
-  # cerca (en tiempo de viaje) queda de la universidad.
+  # Punto de referencia para todo lo de abajo (radio de caminata y
+  # niveles de transporte en la sección `transporte`).
   punto_referencia:
     nombre: "Universidad de San Andrés"
     direccion: "Universidad de San Andrés, Victoria, Provincia de Buenos Aires, Argentina"
+    # Coordenadas del campus (Vito Dumas 284, Victoria) hardcodeadas
+    # para no depender de geocodificar esto en cada corrida -- Nominatim
+    # (la API gratuita que usamos para geocoding) viene devolviendo 403
+    # seguido, y este es un punto fijo que no cambia. Si lat/lon están
+    # cargados acá, main.py los usa directo y no llama al geocoder para
+    # esto. Verificar/ajustar si hace falta más precisión (click derecho
+    # en Google Maps -> "¿Qué hay aquí?" sobre el campus).
+    lat: -34.44644
+    lon: -58.529835
 
-  # Proxy de "no más de 30/40 min de viaje". No hay conectado un
-  # servicio de tiempo de viaje real (tipo Google Distance Matrix,
-  # que requiere API key paga) -- se usa distancia en línea recta
-  # como aproximación. Si en la práctica no refleja bien los tiempos
-  # reales (autopistas, cortes de tránsito, etc.), ajustar este número.
-  distancia_maxima_km: 8
+# A diferencia de precio/ambientes/POIs (que sí descartan
+# publicaciones), esta sección NO filtra nada: clasifica cada
+# publicación que ya pasó el resto de los criterios en un nivel de
+# prioridad, del mejor al peor, y main.py ordena el Sheet según ese
+# nivel (queda en las columnas "prioridad_ubicacion" / "medio_transporte"
+# de cada fila). Así, dentro de un mismo Sheet, arriba quedan las que
+# se llega caminando, después las que tienen buen transporte, y al
+# final las que no tienen ninguna facilidad cerca -- pero todas se
+# muestran, no se pierde ninguna por esto.
+#
+# Nivel 0: caminando a la universidad (radio_caminata_uni_km).
+# Nivel 1: combi universitaria cerca (las dos paradas de abajo).
+# Nivel 2: estación de Tren de la Costa cerca.
+# Nivel 3: estación de Línea Mitre cerca.
+# Nivel 4: parada de colectivo cerca.
+# Nivel 5: nada de lo anterior.
+#
+# El orden combi > tren de la costa > tren mitre > colectivo es el
+# que pidieron (por velocidad/comodidad del trayecto hasta la uni).
+transporte:
+  radio_caminata_uni_km: 1.5   # ~15-20 min caminando
 
-  transporte_publico_si_lejos:
-    # Si la publicación queda más lejos que distancia_maxima_km, la
-    # aceptamos igual si tiene una parada de colectivo o una estación
-    # de tren cerca (se asume que buen acceso a transporte compensa
-    # la distancia en línea recta).
-    requerido: true
-    radio_metros: 500
+  combis:
+    # Paradas de las combis de la universidad -- las de mayor
+    # prioridad después de estar a distancia de caminata.
+    radio_metros: 600
+    puntos:
+      - nombre: "Estación Mitre Victoria"
+        direccion: "Estación Victoria, Línea Mitre, San Fernando, Provincia de Buenos Aires, Argentina"
+        # Si Nominatim no la geocodifica bien, cargá lat/lon a mano
+        # acá (mismo mecanismo que el punto_referencia de arriba) y
+        # se usan directo sin geocodificar.
+        lat: null
+        lon: null
+      - nombre: "Residencia Jacarandá (Necochea 810)"
+        direccion: "Necochea 810, San Fernando, Provincia de Buenos Aires, Argentina"
+        lat: null
+        lon: null
+
+  tren_costa:
+    # Estaciones del ramal Maipú-Delta (Tren de la Costa). Direcciones
+    # para geocodificar una sola vez y cachear en data/geocache.json
+    # -- si alguna no resuelve bien, cargale lat/lon a mano como en
+    # los puntos de combis.
+    radio_metros: 700
+    puntos:
+      - nombre: "Maipú"
+        direccion: "Estación Maipú, Tren de la Costa, Vicente López, Buenos Aires, Argentina"
+      - nombre: "Borges"
+        direccion: "Estación Borges, Tren de la Costa, Vicente López, Buenos Aires, Argentina"
+      - nombre: "Libertador"
+        direccion: "Estación Libertador, Tren de la Costa, Vicente López, Buenos Aires, Argentina"
+      - nombre: "Anchorena"
+        direccion: "Estación Anchorena, Tren de la Costa, San Isidro, Buenos Aires, Argentina"
+      - nombre: "Barrancas"
+        direccion: "Estación Barrancas, Tren de la Costa, San Isidro, Buenos Aires, Argentina"
+      - nombre: "San Isidro (Tren de la Costa)"
+        direccion: "Estación San Isidro, Tren de la Costa, San Isidro, Buenos Aires, Argentina"
+      - nombre: "Punta Chica"
+        direccion: "Estación Punta Chica, Tren de la Costa, San Isidro, Buenos Aires, Argentina"
+      - nombre: "Marina Nueva"
+        direccion: "Estación Marina Nueva, Tren de la Costa, San Fernando, Buenos Aires, Argentina"
+      - nombre: "San Fernando (Tren de la Costa)"
+        direccion: "Estación San Fernando, Tren de la Costa, San Fernando, Buenos Aires, Argentina"
+      - nombre: "Canal"
+        direccion: "Estación Canal, Tren de la Costa, Tigre, Buenos Aires, Argentina"
+      - nombre: "Delta"
+        direccion: "Estación Delta, Tren de la Costa, Tigre, Buenos Aires, Argentina"
+
+  tren_mitre:
+    # Estaciones del ramal Retiro-Tigre (Línea Mitre).
+    radio_metros: 700
+    puntos:
+      - nombre: "Vicente López"
+        direccion: "Estación Vicente López, Línea Mitre, Buenos Aires, Argentina"
+      - nombre: "Olivos"
+        direccion: "Estación Olivos, Línea Mitre, Buenos Aires, Argentina"
+      - nombre: "La Lucila"
+        direccion: "Estación La Lucila, Línea Mitre, Buenos Aires, Argentina"
+      - nombre: "Martínez"
+        direccion: "Estación Martínez, Línea Mitre, Buenos Aires, Argentina"
+      - nombre: "Acassuso"
+        direccion: "Estación Acassuso, Línea Mitre, Buenos Aires, Argentina"
+      - nombre: "San Isidro (Línea Mitre)"
+        direccion: "Estación San Isidro, Línea Mitre, Buenos Aires, Argentina"
+      - nombre: "Beccar"
+        direccion: "Estación Beccar, Línea Mitre, Buenos Aires, Argentina"
+      - nombre: "Victoria"
+        direccion: "Estación Victoria, Línea Mitre, San Fernando, Buenos Aires, Argentina"
+      - nombre: "Virreyes"
+        direccion: "Estación Virreyes, Línea Mitre, San Fernando, Buenos Aires, Argentina"
+      - nombre: "San Fernando (Línea Mitre)"
+        direccion: "Estación San Fernando, Línea Mitre, Buenos Aires, Argentina"
+      - nombre: "Carupá"
+        direccion: "Estación Carupá, Línea Mitre, Tigre, Buenos Aires, Argentina"
+      - nombre: "Tigre"
+        direccion: "Estación Tigre, Línea Mitre, Buenos Aires, Argentina"
+
+  colectivo:
+    # A diferencia de los anteriores, esto se busca vía Overpass/OSM
+    # (POI genérico bus_stop) en vez de una lista fija -- hay
+    # demasiadas paradas como para tener sentido hardcodearlas.
+    radio_metros: 400
+
+capacidad:
+  # Solo interesan departamentos para 2 o 4 personas. Mapeo de
+  # ambientes -> personas (2 ambientes = 1 dormitorio = 2 personas;
+  # 3 ambientes = 2 dormitorios = 4 personas). Cualquier otro valor de
+  # ambientes (1, 4+, o sin dato) se descarta.
+  ambientes_a_personas:
+    2: 2
+    3: 4
+
+precio_por_persona:
+  # Tope de $600.000 ARS por persona: para 2 personas, hasta
+  # $1.200.000; para 4 personas, hasta $2.400.000. Si la publicación
+  # está en USD, se convierte a ARS con la cotización del dólar blue
+  # (core/currency.py) antes de comparar.
+  moneda: "ARS"
+  maximo: 600000
 
 precio:
-  # No filtramos por precio: solo nos interesa que se muestre en el Sheet.
+  # Este precio_min/max es el filtro genérico de core/filters.py
+  # (además del tope por persona de arriba). No lo usamos: solo nos
+  # interesa que el precio se muestre en el Sheet.
   moneda: null
   minimo: null
   maximo: null
 
 ambientes:
-  minimo: null            # sin restricción
+  # Filtro genérico de core/filters.py. No lo usamos acá porque el
+  # filtro real de ambientes ya lo hace `capacidad` de arriba
+  # (2 o 3 ambientes, según a cuántas personas corresponda).
+  minimo: null
   maximo: null
 
 amueblado:
@@ -59,8 +181,10 @@ puntos_de_interes:
     radio_metros: 500
 
 # Notas:
-# - "requerido: true" en un POI significa que si no encontramos ninguno
-#   dentro del radio, la publicación se descarta.
+# - "requerido: true" en un POI (o en capacidad/precio_por_persona)
+#   significa que si no se cumple, la publicación se descarta.
+# - La sección `transporte` es la excepción: no descarta, solo
+#   clasifica y ordena (ver comentario arriba de esa sección).
 # - Estos criterios son fijos por ahora (según lo charlado). Si más adelante
 #   quieren cambiarlos seguido, se puede migrar a una hoja separada del
 #   mismo Google Sheet en vez de este archivo.

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import MagicMock
 
-from core.poi_finder import POIFinder, haversine_km
+from core.poi_finder import POIFinder, distancia_minima_km, haversine_km
 
 
 class TestHaversine(unittest.TestCase):
@@ -14,6 +14,17 @@ class TestHaversine(unittest.TestCase):
         distancia = haversine_km(-34.6037, -58.3816, -34.4264, -58.5796)
         self.assertGreater(distancia, 20)
         self.assertLess(distancia, 35)
+
+
+class TestDistanciaMinimaKm(unittest.TestCase):
+    def test_ninguna_lista_de_puntos_devuelve_none(self):
+        self.assertIsNone(distancia_minima_km(-34.6, -58.4, []))
+
+    def test_devuelve_la_distancia_al_mas_cercano(self):
+        lejos = (-34.0, -58.0)
+        cerca = (-34.601, -58.401)
+        d = distancia_minima_km(-34.6, -58.4, [lejos, cerca])
+        self.assertAlmostEqual(d, haversine_km(-34.6, -58.4, *cerca), places=6)
 
 
 class TestPOIFinderQuery(unittest.TestCase):

@@ -19,9 +19,12 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import Optional
 
 import requests
+
+from core.disk_cache import DiskCache
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +36,31 @@ Coordenadas = tuple[float, float]
 
 
 class Geocoder:
-    def __init__(self, session: Optional[requests.Session] = None, country_bias: str = "ar"):
+    def __init__(
+        self,
+        session: Optional[requests.Session] = None,
+        country_bias: str = "ar",
+        cache_path: str | Path | None = None,
+    ):
         self.session = session or requests.Session()
-        self.session.headers.setdefault("User-Agent", USER_AGENT)
+        # requests.Session() ya trae un User-Agent propio
+        # ("python-requests/x.y.z") seteado en session.headers por
+        # default, así que .setdefault() nunca lo pisa. Nominatim
+        # exige un User-Agent identificable -- hace falta asignarlo
+        # directo para que efectivamente viaje el nuestro.
+        self.session.headers["User-Agent"] = USER_AGENT
         self.country_bias = country_bias
-        self._cache: dict[str, Optional[Coordenadas]] = {}
+        # cache_path=None (default) deja el cache solo en memoria, para
+        # no ensuciar de I/O los tests o corridas puntuales. main.py le
+        # pasa un archivo real para no re-geocodificar entre corridas.
+        self._cache = DiskCache(cache_path)
+        # Direcciones que fallaron por un error transitorio (timeout,
+        # red caída) en esta corrida -- a diferencia del cache
+        # persistente, esto vive solo en memoria: un fallo de red no
+        # debe "recordarse para siempre" como si la dirección no
+        # existiera, pero sí evitamos reintentarla una y otra vez
+        # dentro de la misma corrida.
+        self._fallos_este_proceso: set[str] = set()
         self._ultima_request = 0.0
 
     def _throttle(self) -> None:
@@ -53,7 +76,10 @@ class Geocoder:
 
         clave = direccion.strip().lower()
         if clave in self._cache:
-            return self._cache[clave]
+            valor = self._cache.get(clave)
+            return tuple(valor) if valor is not None else None
+        if clave in self._fallos_este_proceso:
+            return None
 
         self._throttle()
         try:
@@ -72,20 +98,23 @@ class Geocoder:
             resultados = response.json()
         except Exception:
             logger.exception("geocoder: error geocodificando '%s'", direccion)
-            self._cache[clave] = None
+            self._fallos_este_proceso.add(clave)
             return None
 
         if not resultados:
             logger.info("geocoder: sin resultados para '%s'", direccion)
-            self._cache[clave] = None
+            self._cache.set(clave, None)
+            self._cache.persist()
             return None
 
         try:
             coords = (float(resultados[0]["lat"]), float(resultados[0]["lon"]))
         except (KeyError, TypeError, ValueError, IndexError):
             logger.warning("geocoder: respuesta inesperada para '%s': %r", direccion, resultados)
-            self._cache[clave] = None
+            self._cache.set(clave, None)
+            self._cache.persist()
             return None
 
-        self._cache[clave] = coords
+        self._cache.set(clave, list(coords))
+        self._cache.persist()
         return coords

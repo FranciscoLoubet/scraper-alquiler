@@ -32,10 +32,43 @@ class ZonapropScraper(Scraper):
             self.session.headers = {}
         self.session.headers.setdefault("User-Agent", self.DEFAULT_USER_AGENT)
         self.session.headers.setdefault("Accept-Language", "es-AR,es;q=0.9,en;q=0.8")
+        # Headers que manda un browser real y requests no agrega solo.
+        # Sin esto, algunos WAF (Akamai/Cloudflare/Datadome, etc.) tiran
+        # 403 directo aunque el User-Agent esté bien seteado.
+        self.session.headers.setdefault(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        )
+        self.session.headers.setdefault("Accept-Encoding", "gzip, deflate, br")
+        self.session.headers.setdefault("Upgrade-Insecure-Requests", "1")
+        self.session.headers.setdefault("Sec-Fetch-Dest", "document")
+        self.session.headers.setdefault("Sec-Fetch-Mode", "navigate")
+        self.session.headers.setdefault("Sec-Fetch-Site", "none")
         self.initial_url = initial_url
         self.max_pages = max_pages
         self.timeout = timeout
         self.domain = "https://www.zonaprop.com.ar"
+        self._sesion_calentada = False
+
+    def _calentar_sesion(self) -> None:
+        """
+        Pide la home antes de la búsqueda para levantar las cookies que
+        el WAF de ZonaProp exige en el request siguiente -- pedir la URL
+        de búsqueda "en frío" (sin cookies previas) es lo que suele
+        devolver 403. Si esto falla, seguimos igual: puede que el bloqueo
+        sea por otra causa y no tiene sentido frenar todo el scraping acá.
+        """
+        if self._sesion_calentada:
+            return
+        self._sesion_calentada = True
+        try:
+            try:
+                self.session.get(self.domain, timeout=self.timeout)
+            except TypeError:
+                self.session.get(self.domain)
+            time.sleep(1.0)
+        except Exception:
+            logger.warning("[%s] no se pudo precalentar la sesión contra %s", self.nombre_sitio, self.domain)
 
     def _next_page_url(self, page_number: int) -> str:
         """Genera la URL de la siguiente página sin romper rutas ya paginadas."""
@@ -48,24 +81,24 @@ class ZonapropScraper(Scraper):
         return f"{base_path}-pagina-{page_number}.html"
 
     def _extract_state_data(self, response_text: str, current_url: str) -> dict:
-        """Extrae el JSON embebido de `__PRELOADED_STATE__` de la página HTML."""
+        """Extrae el JSON embebido de `__PRELOADED_STATE__` de la página HTML.
+
+        Zonaprop mete, dentro del mismo `<script>`, la asignación de
+        `__PRELOADED_STATE__` seguida de otras (`__SITE_DATA__`,
+        `__PRELOADED_TRANSLATIONS__`, etc.) antes del `</script>` de
+        cierre. Cortar en el primer `</script>` arrastra esas
+        asignaciones siguientes y rompe el JSON. `raw_decode` parsea
+        un único objeto JSON válido desde el inicio del payload e
+        ignora lo que venga después, sin importar qué sea.
+        """
         marker = "window.__PRELOADED_STATE__ = "
         start = response_text.find(marker)
         if start == -1:
             raise ValueError(f"No se encontró __PRELOADED_STATE__ en {current_url}")
 
-        payload = response_text[start + len(marker):].strip()
-        payload = payload.split("</script>", 1)[0].strip()
-        if payload.endswith(";"):
-            payload = payload[:-1].rstrip()
-
-        try:
-            return json.loads(payload)
-        except json.JSONDecodeError:
-            match = re.search(r'(\{.*\})\s*;?\s*$', payload, re.DOTALL)
-            if not match:
-                raise
-            return json.loads(match.group(1))
+        payload = response_text[start + len(marker):].lstrip()
+        data, _ = json.JSONDecoder().raw_decode(payload)
+        return data
 
     def fetch_listings(self) -> list[dict]:
         """Trae la lista de publicaciones crudas de la búsqueda actual.
@@ -76,6 +109,8 @@ class ZonapropScraper(Scraper):
         """
         if not self.initial_url:
             raise ValueError("initial_url es obligatoria para ZonapropScraper")
+
+        self._calentar_sesion()
 
         current_url = self.initial_url
         current_page = 1
